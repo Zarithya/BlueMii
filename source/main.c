@@ -644,16 +644,17 @@ int main(int argc, char **argv) {
 				
 				console_clear_line(2);
 				printf("Please select your exploit target: <%s>\n", stage0_addrs[which_addr].name);
-				if (wpad_pressed & WPAD_BUTTON_RIGHT || pad_pressed & PAD_BUTTON_RIGHT) {
+				if ((wpad_pressed & WPAD_BUTTON_RIGHT) || (pad_pressed & PAD_BUTTON_RIGHT)) {
 					if (++which_addr >= ARRAY_COUNT(stage0_addrs))
 					which_addr = 0;
-				} else if (wpad_pressed & WPAD_BUTTON_LEFT || pad_pressed & PAD_BUTTON_LEFT) {
+				} else if ((wpad_pressed & WPAD_BUTTON_LEFT) || (pad_pressed & PAD_BUTTON_LEFT)) {
 					if (--which_addr < 0)
 					which_addr = ARRAY_COUNT(stage0_addrs) - 1;
-				} else if (wpad_pressed & WPAD_BUTTON_A || pad_pressed & PAD_BUTTON_A) {
+				} else if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
 					state++;
-				} else if (wpad_pressed & WPAD_BUTTON_HOME) {
-					printf("\x1b[2J");
+				} else if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
+					console_set_cursor_pos(6, 0);
+					console_clear_screen(0);
 					quitState = 1;
 				} 
 				break;
@@ -663,9 +664,9 @@ int main(int argc, char **argv) {
 				printf("Press \x1b[38;5;10mA\x1b[0m to turn off all connected Wiimotes and begin the exploit process.\n");
 				printf("Press \x1b[38;5;9mB\x1b[0m to go back and choose a different target.\n");
 
-				if (wpad_pressed & WPAD_BUTTON_A || pad_pressed & PAD_BUTTON_A) {
+				if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
 					state++;
-				} else if (wpad_pressed & WPAD_BUTTON_B || pad_pressed & PAD_BUTTON_B) {
+				} else if ((wpad_pressed & WPAD_BUTTON_B) || (pad_pressed & PAD_BUTTON_B)) {
 					console_set_cursor_pos(6, 0);
 					console_clear_screen(0);
 					state--;
@@ -711,7 +712,7 @@ int main(int argc, char **argv) {
 					BT_Shutdown();
 					WPAD_Init();
 					state = APP_STATE_EXPLOIT_FAILED;
-				} else if (sync_pressed) {
+				} else if (sync_pressed || (pad_pressed & PAD_BUTTON_B)) {
 					sync_pressed = false;
 					printf("\nCanceled by user. You may need to hard reset the target system.\n");
 					printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m to quit.\n");
@@ -729,20 +730,20 @@ int main(int argc, char **argv) {
 				state++;
 				break;
 			case APP_STATE_EXPLOIT_CANCELED:
-				if (wpad_pressed & WPAD_BUTTON_A || pad_pressed & PAD_BUTTON_A) {
+				if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
 					console_clear_screen(2);
 					state = APP_STATE_CHOOSE;
-				} else if (wpad_pressed & WPAD_BUTTON_HOME || pad_pressed & PAD_BUTTON_START) {
+				} else if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
 					console_set_cursor_pos(6, 0);
 					console_clear_screen(0);
 					quitState = 1;
 				}
 				break;
 			case APP_STATE_EXPLOIT_FAILED:
-				if (wpad_pressed & WPAD_BUTTON_A || pad_pressed & PAD_BUTTON_A) {
+				if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
 					console_clear_screen(2);
 					state = APP_STATE_CHOOSE;
-				} else if (wpad_pressed & WPAD_BUTTON_HOME || pad_pressed & PAD_BUTTON_START) {
+				} else if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
 					console_set_cursor_pos(6, 0);
 					console_clear_screen(0);
 					quitState = 1;
