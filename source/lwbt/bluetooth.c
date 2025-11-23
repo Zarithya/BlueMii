@@ -84,7 +84,7 @@ static err_t __bt_shutdown_finished(void *arg,struct hci_pcb *pcb,u8_t ogf,u8_t 
 	else
 		err = ERR_CONN;
 
-	physbusif_shutdown();
+	physbusif_close();
 	return __bt_cmdfinish(state,err);
 }
 
@@ -106,7 +106,7 @@ void BT_Shutdown(void)
 	LWP_CloseQueue(btstate.hci_cmdq);
 	_CPU_ISR_Restore(level);
 
-	physbusif_close();
+	physbusif_shutdown();
 }
 
 err_t bt_hci_initcore_complete(void *arg,struct hci_pcb *pcb,u8_t ogf,u8_t ocf,u8_t result)
@@ -147,7 +147,7 @@ err_t bt_hci_initcore_complete(void *arg,struct hci_pcb *pcb,u8_t ogf,u8_t ocf,u
 					err = ERR_CONN;
 			} else if(ocf==HCI_W_COD_OCF) { // 3
 				if(result==HCI_SUCCESS) {
-					hci_write_local_name((u8_t*)"Nintendo RVL-CNT-01",20);
+					hci_write_local_name((u8_t*)"Nintendo RVL-CNT-01-BB",23);
 				} else
 					err = ERR_CONN;
 			} else if(ocf==HCI_W_LOCAL_NAME_OCF) { // 4

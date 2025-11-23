@@ -2,9 +2,8 @@
 #include <stdlib.h>
 #include <gccore.h>
 #include <string.h>
+#include <fat.h>
 #include "stream_macros.h"
-#include "stage0/stage0_bin.h"
-#include "stage1_bin.h"
 #include "lwbt/bluetooth.h"
 #include "lwbt/btarch.h"
 #include "lwbt/l2cap.h"
@@ -26,6 +25,11 @@
 
 static void *xfb = NULL;
 static GXRModeObj *rmode = NULL;
+
+static u8_t *stage0_payload = NULL;
+static long stage0_length = -1;
+static u8_t *stage1_payload = NULL;
+static long stage1_length = -1;
 
 static bool sync_pressed = false;
 static err_t bomb_err = ERR_OK;
@@ -97,7 +101,7 @@ err_t upload_payload(struct l2cap_pcb *pcb, struct payload_info_t* payload_info)
 
 err_t bluebomb_success2(void *arg, struct l2cap_pcb *pcb, u16_t resp, u8_t id)
 {
-	if (PAYLOAD_RESP('S','0')) {
+	if (resp == PAYLOAD_RESP('G','D')) {
 		if (upload_payload(pcb, &payload_info) == ERR_COMPLETE) {
 			printf("\nJumping to payload!\n");
 			l2ca_bluebomb(pcb, NULL);
@@ -110,11 +114,11 @@ err_t bluebomb_success2(void *arg, struct l2cap_pcb *pcb, u16_t resp, u8_t id)
 
 err_t bluebomb_success(void *arg, struct l2cap_pcb *pcb, u16_t resp, u8_t id)
 {
-	if (PAYLOAD_RESP('S','0')) {
+	if (resp == PAYLOAD_RESP('S','0')) {
 		printf("Got response!\nUploading payload...\n0 / %d", payload_info.length);
 		fflush(stdout);
 		l2ca_bluebomb(pcb, bluebomb_success2);
-		return bluebomb_success2(arg, pcb, resp, id);
+		return bluebomb_success2(arg, pcb, PAYLOAD_RESP('G','D'), id);
 	}
 	
 	return ERR_OK;
@@ -318,7 +322,7 @@ static err_t __bluebomb_receive(void *arg,struct l2cap_pcb *pcb,struct pbuf *p,e
 				ret = send_sdp_service_response(pcb, tid);
 				break;
 			case SDP_SERVICE_ATTR_REQ:
-				ret = send_sdp_attribute_response(pcb, tid, stage0_bin, sizeof(stage0_bin));
+				ret = send_sdp_attribute_response(pcb, tid, stage0_payload, stage0_length);
 				break;
 		}
 	}
@@ -568,6 +572,8 @@ enum APP_STATE {
 	APP_STATE_EXPLOIT_FINISHED,
 	APP_STATE_EXPLOIT_CANCELED,
 	APP_STATE_EXPLOIT_FAILED,
+	APP_STATE_INIT_FAILED,
+	APP_STATE_WAIT_EXIT,
 };
 
 void console_set_cursor_pos(int line, int column) {
@@ -580,6 +586,60 @@ void console_clear_line(int mode) {
 
 void console_clear_screen(int mode) {
 	printf("\x1b[%dJ", mode);
+}
+
+void *read_bin(const char *path, long *len) {
+	void *ptr = NULL;
+	FILE *file = NULL;
+	char *fullpath = NULL;
+	long filelen = -1;
+
+	if (path == NULL) {
+		fprintf(stderr, "\x1b[38;5;9mread_bin: path was NULL!\x1b[0m\n");
+		return NULL;
+	}
+
+	if ((fullpath = realpath(path, NULL)) == NULL) {
+		fprintf(stderr, "\x1b[38;5;9mread_bin: Could not find '%s'!\x1b[0m\n", path);
+		return NULL;
+	}
+
+	if ((file = fopen(fullpath, "rb")) == NULL) {
+		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to open '%s'!\x1b[0m\n", fullpath);
+		return NULL;
+	}
+
+	if (fseek(file, 0, SEEK_END) != 0) {
+		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to seek in '%s'!\x1b[0m\n", fullpath);
+		return NULL;
+	}
+
+	if ((filelen = ftell(file)) < 0) {
+		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to get size of '%s'!\x1b[0m\n", fullpath);
+		return NULL;
+	}
+
+	if (len != NULL)
+		*len = filelen;
+
+	rewind(file);
+
+	if ((ptr = malloc(filelen)) == NULL) {
+		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to allocate %ld bytes for reading file '%s'!\x1b[0m\n", filelen, fullpath);
+		return NULL;
+	}
+
+	if (fread(ptr, 1, filelen, file) < filelen) {
+		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to read file '%s'!\x1b[0m\n", fullpath);
+		return NULL;
+	}
+
+	if (fclose(file) != 0) {
+		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to close file '%s'!\x1b[0m\n", fullpath);
+		return NULL;
+	}
+
+	return ptr;
 }
 
 int main(int argc, char **argv) {
@@ -627,16 +687,30 @@ int main(int argc, char **argv) {
 	PAD_Init();
 	WPAD_Init();
 
-	while(1) 
-	{
+	console_set_cursor_pos(1, 0);
+
+	// Load the payload files from SD
+	if (!fatInitDefault()) {
+		fprintf(stderr, "\x1b[38;5;9mFailed to initialize FAT device!\x1b[0m\n");
+		state = APP_STATE_INIT_FAILED;
+	}
+
+	if ((state == APP_STATE_CHOOSE) && ((stage0_payload = read_bin("stage0.bin", &stage0_length)) == NULL)) {
+		state = APP_STATE_INIT_FAILED;
+	}
+
+	if ((state == APP_STATE_CHOOSE) && ((stage1_payload = read_bin("stage1.bin", &stage1_length)) == NULL)) {
+		state = APP_STATE_INIT_FAILED;
+	}
+
+	while (!quitState) {
 		PAD_ScanPads();
 		WPAD_ScanPads();
 
 		u32_t pad_pressed = PAD_ButtonsDown(0) | PAD_ButtonsDown(1) | PAD_ButtonsDown(2) | PAD_ButtonsDown(3);
 		u32_t wpad_pressed = WPAD_ButtonsDown(0) | WPAD_ButtonsDown(1) | WPAD_ButtonsDown(2) | WPAD_ButtonsDown(3);
 
-		switch (state)
-		{
+		switch (state) {
 			case APP_STATE_CHOOSE:
 				console_set_cursor_pos(1, 0);
 				printf("\x1b[38;5;39mBlueMii\x1b[0m (Bluebomb v1.5)\n");
@@ -670,13 +744,17 @@ int main(int argc, char **argv) {
 					console_set_cursor_pos(6, 0);
 					console_clear_screen(0);
 					state--;
+				} else if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
+					console_set_cursor_pos(6, 0);
+					console_clear_screen(0);
+					quitState = 1;
 				}
 				break;
 			case APP_STATE_EXPLOIT_INIT:
 				WPAD_Shutdown();
-				console_set_cursor_pos(7, 0);
+				console_set_cursor_pos(5, 0);
 				console_clear_screen(0);
-				console_set_cursor_pos(8, 0);
+				console_set_cursor_pos(6, 0);
 				printf("Starting Bluebomb for target %s...\n\n", stage0_addrs[which_addr].name);
 				L2CB = stage0_addrs[which_addr].addr;
 				
@@ -686,11 +764,10 @@ int main(int argc, char **argv) {
 					payload_addr = 0x81780000; // 512K before the end of mem 1
 				}
 
-				*(u32_t*)(stage0_bin + 0x8) = htobe32(payload_addr);
+				*(u32_t*)(stage0_payload + 0x8) = htobe32(payload_addr);
 
-				payload_info.payload = stage1_bin;
-				payload_info.length = sizeof(stage1_bin);
-				payload_info.remaining = sizeof(stage1_bin);
+				payload_info.payload = stage1_payload;
+				payload_info.length = payload_info.remaining = stage1_length;
 		
 				BT_Init(bluebomb_accept, &sdp_pcb);
 				hci_sync_btn(WiiSyncButton);
@@ -707,7 +784,7 @@ int main(int argc, char **argv) {
 					state++;
 				} else if (bomb_err != ERR_OK) {
 					printf("\n\x1b[38;5;9mAn error occurred: code %d.\x1b[0\n", bomb_err);
-					printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m to quit.\n");
+					printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
 					sdp_pcb = NULL;
 					BT_Shutdown();
 					WPAD_Init();
@@ -715,7 +792,7 @@ int main(int argc, char **argv) {
 				} else if (sync_pressed || (pad_pressed & PAD_BUTTON_B)) {
 					sync_pressed = false;
 					printf("\nCanceled by user. You may need to hard reset the target system.\n");
-					printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m to quit.\n");
+					printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
 					sdp_pcb = NULL;
 					BT_Shutdown();
 					WPAD_Init();
@@ -723,10 +800,10 @@ int main(int argc, char **argv) {
 				}
 				break;
 			case APP_STATE_EXPLOIT_FINISHED:
-				console_set_cursor_pos(24, 0);
-				printf("Congrats! Your Wii is now running homebrew.\n");
+				console_set_cursor_pos(23, 0);
+				printf("\x1b[38;5;10mCongrats! Your Wii is now running homebrew.\x1b[0m\n");
 				printf("...Your other Wii, that is.\n\n");
-				printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m to quit.");
+				printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
 				state++;
 				break;
 			case APP_STATE_EXPLOIT_CANCELED:
@@ -749,21 +826,32 @@ int main(int argc, char **argv) {
 					quitState = 1;
 				}
 				break;
+			case APP_STATE_INIT_FAILED:
+				printf("An error occurred while initializing \x1b[38;5;39mBlueMii\x1b[0m.\nPress \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
+				state++;
+				break;
+			case APP_STATE_WAIT_EXIT:
+				if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
+					console_set_cursor_pos(6, 0);
+					console_clear_screen(0);
+					quitState = 1;
+				}
+				break;
 		}
 
 		VIDEO_WaitVSync();
-
-		if (quitState) {
-			if (quitState == 2)
-				SYS_ResetSystem(SYS_POWEROFF,0,0);
-			break;
-		}
 	}
 
-	WPAD_Shutdown();
-	BT_Shutdown();
+	if (state == APP_STATE_EXPLOIT_RUNNING)
+		BT_Shutdown();
+	else
+		WPAD_Shutdown();
 
-	printf("On this day, you truly BlueMii.\n");
+	if (quitState == 2) {
+		SYS_ResetSystem(SYS_POWEROFF,0,0);
+	}
+
+	printf("On this day, you truly \x1b[38;5;39mBlueMii\x1b[0m.\n");
 	sleep(2);
 
 	return 0;

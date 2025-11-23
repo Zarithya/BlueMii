@@ -1,4 +1,5 @@
 *.dol
 *.elf
+*.psd
 .vscode/
 build/
