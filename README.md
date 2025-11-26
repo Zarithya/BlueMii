@@ -21,9 +21,6 @@ You will need either an already-hacked Wii console or a copy of Dolphin **with w
 9. On the *target* console, press the SYNC button repeatedly until the screen displays `Got connection handle`. From here on, the process is automatic, so sit back and watch a Wii hack another Wii!
 
 ## Troubleshooting
-**Q: I'm getting the error `read_bin: Could not find 'stageX.bin'!`**    
-A: Make sure the `stage0.bin` and `stage1.bin` files are located in the same folder as BlueMii's `boot.dol`. If you copied the `apps` directory to the root of your SD card, they should already be there.
-
 **Q: I'm pressing the SYNC button on my target console but BlueMii only says "Waiting to accept..."!**    
 A: BlueMii can't find your other Wii. Try moving the consoles closer to one another ~~and make them kiss~~.
 
