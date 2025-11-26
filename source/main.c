@@ -402,7 +402,7 @@ s32_t bluebomb_accept(s32_t result, void *userdata)
 		return ret;
 	}
 
-	printf("Bluebomb ready. Press \x1b[38;5;160mSYNC\x1b[0m on the target console to connect.\n");
+	printf("BlueBomb ready. Press \x1b[38;5;160mSYNC\x1b[0m on the target console to connect.\n");
 	printf("Press \x1b[38;5;160mSYNC\x1b[0m/\x1b[38;5;9mB\x1b[0m on this console to cancel.\n");
 	printf("Waiting to accept...\n");
 
@@ -750,7 +750,7 @@ int main(int argc, char **argv) {
 		switch (state) {
 			case APP_STATE_CHOOSE:
 				console_set_cursor_pos(1, 0);
-				printf("\x1b[38;5;39mBlueMii\x1b[0m (Bluebomb v1.5)\n");
+				printf("\x1b[38;5;39mBlueMii\x1b[0m (BlueBomb v1.5)\n");
 				printf("Original exploit/code by \x1b[38;5;123mFullmetal5\x1b[0m, port by \x1b[38;5;99mZarithya\x1b[0m\n\n");
 				
 				console_clear_line(2);
@@ -792,7 +792,7 @@ int main(int argc, char **argv) {
 				console_set_cursor_pos(5, 0);
 				console_clear_screen(0);
 				console_set_cursor_pos(6, 0);
-				printf("Starting Bluebomb for target %s...\n\n", stage0_addrs[which_addr].name);
+				printf("Starting BlueBomb for target %s...\n\n", stage0_addrs[which_addr].name);
 				L2CB = stage0_addrs[which_addr].addr;
 				
 				if (L2CB >= 0x81000000) { // System menu

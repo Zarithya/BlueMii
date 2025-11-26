@@ -363,7 +363,7 @@ void l2cap_process_sig(struct pbuf *q, struct l2cap_hdr *l2caphdr, struct bd_add
 				break;
 			case L2CAP_CONN_RSP:
 				if(pcb == NULL) {
-					/* A response without a matching request is our Bluebomb code responding */
+					/* A response without a matching request is our BlueBomb code responding */
 					result = le16toh(((u16_t *)p->payload)[2]);
 					LOG("l2cap_process_sig: I blue myself");
 					for(pcb = l2cap_active_pcbs; pcb != NULL; pcb = pcb->next) {
