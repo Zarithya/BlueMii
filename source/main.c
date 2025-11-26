@@ -36,6 +36,7 @@ static long stage1_length = -1;
 static bool sync_pressed = false;
 static err_t bomb_err = ERR_OK;
 static s32_t quitState = 0;
+static u64_t timeout = 0;
 
 struct payload_info_t {
 	void *payload;
@@ -103,6 +104,9 @@ err_t upload_payload(struct l2cap_pcb *pcb, struct payload_info_t* payload_info)
 
 err_t bluebomb_success2(void *arg, struct l2cap_pcb *pcb, u16_t resp, u8_t id)
 {
+	// Reset timeout
+	timeout = gettime() + millisecs_to_ticks(10 * 1000);
+
 	if (resp == PAYLOAD_RESP('G','D')) {
 		if (upload_payload(pcb, &payload_info) == ERR_COMPLETE) {
 			printf("\nJumping to payload!\n");
@@ -116,6 +120,9 @@ err_t bluebomb_success2(void *arg, struct l2cap_pcb *pcb, u16_t resp, u8_t id)
 
 err_t bluebomb_success(void *arg, struct l2cap_pcb *pcb, u16_t resp, u8_t id)
 {
+	// Reset timeout
+	timeout = gettime() + millisecs_to_ticks(10 * 1000);
+
 	if (resp == PAYLOAD_RESP('S','0')) {
 		printf("Got response!\nUploading payload...\n0 / %d", payload_info.length);
 		fflush(stdout);
@@ -128,6 +135,9 @@ err_t bluebomb_success(void *arg, struct l2cap_pcb *pcb, u16_t resp, u8_t id)
 
 err_t bluebomb_disconnected_ind(void *arg, struct l2cap_pcb *pcb, err_t err)
 {
+	// Clear timeout
+	timeout = 0;
+
 	l2cap_close(pcb);
 	return ERR_OK;
 }
@@ -315,6 +325,10 @@ err_t send_sdp_attribute_response(struct l2cap_pcb *pcb,u16_t tid, void* payload
 static err_t __bluebomb_receive(void *arg,struct l2cap_pcb *pcb,struct pbuf *p,err_t err)
 {
 	err_t ret = ERR_OK;
+
+	// Reset timeout
+	timeout = gettime() + millisecs_to_ticks(10 * 1000);
+
 	if (pcb->psm == SDP_PSM) {
 		u8_t hdr = *(u8_t *)p->payload;
 		u16_t tid = be16toh(*((u16_t*)((u8_t *)p->payload) + 1));
@@ -342,6 +356,9 @@ static err_t __bluebomb_accept_step2(void *arg,struct l2cap_pcb *l2cappcb,err_t 
 		l2cap_recv(l2cappcb,__bluebomb_receive);
 		l2cap_disconnect_ind(l2cappcb,bluebomb_disconnected_ind);
 		*pcb = l2cappcb;
+
+		// Timeout after 10 seconds of inactivity
+		timeout = gettime() + millisecs_to_ticks(10 * 1000);
 	} else {
 		l2cap_close(l2cappcb);
 	}
@@ -353,20 +370,20 @@ s32_t bluebomb_listenasync(struct l2cap_pcb **pcb, struct bd_addr *bdaddr)
 {
 	u32 level;
 	s32 err = ERR_OK;
-	struct l2cap_pcb *l2capcb = NULL;
+	struct l2cap_pcb *l2cappcb = NULL;
 
 	LOG("bluebomb_listenasync()\n");
 	_CPU_ISR_Disable(level);
 
-	if((l2capcb = l2cap_new()) == NULL) {
+	if((l2cappcb = l2cap_new()) == NULL) {
 		err = ERR_MEM;
 		goto error;
 	}
-	l2cap_arg(l2capcb,pcb);
+	l2cap_arg(l2cappcb,pcb);
 
-	err = l2cap_connect_ind(l2capcb,bdaddr,SDP_PSM,__bluebomb_accept_step2);
+	err = l2cap_connect_ind(l2cappcb,bdaddr,SDP_PSM,__bluebomb_accept_step2);
 	if(err != ERR_OK) {
-		l2cap_close(l2capcb);
+		l2cap_close(l2cappcb);
 	}
 
 error:
@@ -386,7 +403,7 @@ s32_t bluebomb_accept(s32_t result, void *userdata)
 	}
 
 	printf("Bluebomb ready. Press \x1b[38;5;160mSYNC\x1b[0m on the target console to connect.\n");
-	printf("Press \x1b[38;5;160mSYNC\x1b[0m on this console to cancel.\n");
+	printf("Press \x1b[38;5;160mSYNC\x1b[0m/\x1b[38;5;9mB\x1b[0m on this console to cancel.\n");
 	printf("Waiting to accept...\n");
 
 	return ret;
@@ -572,11 +589,9 @@ enum APP_STATE {
 	APP_STATE_EXPLOIT_INIT,
 	APP_STATE_EXPLOIT_RUNNING,
 	APP_STATE_EXPLOIT_FINISHED,
-	APP_STATE_EXPLOIT_CANCELED,
-	APP_STATE_EXPLOIT_FAILED,
 	APP_STATE_INIT_WARNING,
-	APP_STATE_WAIT_CONTINUE,
 	APP_STATE_INIT_FAILED,
+	APP_STATE_WAIT_RESTART,
 	APP_STATE_WAIT_EXIT,
 };
 
@@ -797,75 +812,48 @@ int main(int argc, char **argv) {
 				break;
 			case APP_STATE_EXPLOIT_RUNNING:
 				if (bomb_err == ERR_COMPLETE) {
-					bomb_err = ERR_OK;
 					// Sleep for 100ms to make sure exploit is running on target before we shut down
 					usleep(100 * 1000);
-					sdp_pcb = NULL;
-					BT_Shutdown();
-					WPAD_Init();
+					console_set_cursor_pos(23, 0);
+					printf("\x1b[38;5;10mCongrats! Your Wii is now running homebrew.\x1b[0m\n");
+					printf("...Your other Wii, that is.\n\n");
 					state++;
 				} else if (bomb_err != ERR_OK) {
-					printf("\n\x1b[38;5;9mAn error occurred: code %d.\x1b[0\n", bomb_err);
-					printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
-					sdp_pcb = NULL;
-					BT_Shutdown();
-					WPAD_Init();
-					state = APP_STATE_EXPLOIT_FAILED;
+					printf("\n\n\x1b[38;5;9mAn error occurred: code %d.\x1b[0 You may need to hard reset the target system.\n", bomb_err);
+					state++;
 				} else if (sync_pressed || (pad_pressed & PAD_BUTTON_B)) {
 					sync_pressed = false;
-					printf("\nCanceled by user. You may need to hard reset the target system.\n");
-					printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
-					sdp_pcb = NULL;
-					BT_Shutdown();
-					WPAD_Init();
-					state = APP_STATE_EXPLOIT_FAILED;
+					printf("\n\nCanceled by user. You may need to hard reset the target system.\n");
+					state++;
+				} else if ((timeout > 0) && (gettime() >= timeout)) {
+					printf("\n\nTimed out. You may need to hard reset the target system.\n");
+					state++;
 				}
 				break;
 			case APP_STATE_EXPLOIT_FINISHED:
-				console_set_cursor_pos(23, 0);
-				printf("\x1b[38;5;10mCongrats! Your Wii is now running homebrew.\x1b[0m\n");
-				printf("...Your other Wii, that is.\n\n");
 				printf("Press \x1b[38;5;10mA\x1b[0m to restart, or press \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
-				state++;
-				break;
-			case APP_STATE_EXPLOIT_CANCELED:
-				if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
-					console_clear_screen(2);
-					state = APP_STATE_CHOOSE;
-				} else if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
-					console_set_cursor_pos(6, 0);
-					console_clear_screen(0);
-					quitState = 1;
-				}
-				break;
-			case APP_STATE_EXPLOIT_FAILED:
-				if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
-					console_clear_screen(2);
-					state = APP_STATE_CHOOSE;
-				} else if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
-					console_set_cursor_pos(6, 0);
-					console_clear_screen(0);
-					quitState = 1;
-				}
+				bomb_err = ERR_OK;
+				timeout = 0;
+				sdp_pcb = NULL;
+				BT_Shutdown();
+				WPAD_Init();
+				state = APP_STATE_WAIT_RESTART;
 				break;
 			case APP_STATE_INIT_WARNING:
 				printf("Press \x1b[38;5;10mA\x1b[0m to continue, or press \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
-				state++;
-				break;
-			case APP_STATE_WAIT_CONTINUE:
-				if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
-					console_clear_screen(2);
-					state = APP_STATE_CHOOSE;
-				} else if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
-					console_set_cursor_pos(6, 0);
-					console_clear_screen(0);
-					quitState = 1;
-				}
+				state = APP_STATE_WAIT_RESTART;
 				break;
 			case APP_STATE_INIT_FAILED:
 				printf("An error occurred while initializing \x1b[38;5;39mBlueMii\x1b[0m.\nPress \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
-				state++;
+				state = APP_STATE_WAIT_EXIT;
 				break;
+			case APP_STATE_WAIT_RESTART:
+				if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
+					console_clear_screen(2);
+					state = APP_STATE_CHOOSE;
+					break;
+				}
+				// fallthrough
 			case APP_STATE_WAIT_EXIT:
 				if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
 					console_set_cursor_pos(6, 0);
