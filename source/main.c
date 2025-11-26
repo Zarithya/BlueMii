@@ -4,6 +4,8 @@
 #include <string.h>
 #include <fat.h>
 #include "stream_macros.h"
+#include "stage0_bin.h"
+#include "stage1_bin.h"
 #include "lwbt/bluetooth.h"
 #include "lwbt/btarch.h"
 #include "lwbt/l2cap.h"
@@ -572,6 +574,8 @@ enum APP_STATE {
 	APP_STATE_EXPLOIT_FINISHED,
 	APP_STATE_EXPLOIT_CANCELED,
 	APP_STATE_EXPLOIT_FAILED,
+	APP_STATE_INIT_WARNING,
+	APP_STATE_WAIT_CONTINUE,
 	APP_STATE_INIT_FAILED,
 	APP_STATE_WAIT_EXIT,
 };
@@ -591,31 +595,37 @@ void console_clear_screen(int mode) {
 void *read_bin(const char *path, long *len) {
 	void *ptr = NULL;
 	FILE *file = NULL;
+	char *curdir = NULL;
 	char *fullpath = NULL;
 	long filelen = -1;
 
 	if (path == NULL) {
-		fprintf(stderr, "\x1b[38;5;9mread_bin: path was NULL!\x1b[0m\n");
+		fprintf(stderr, "\x1b[38;5;11mread_bin: path was NULL!\x1b[0m\n");
+		return NULL;
+	}
+
+	if ((curdir = realpath(".", NULL)) == NULL) {
+		fprintf(stderr, "\x1b[38;5;11mread_bin: Current directory is invalid!\x1b[0m\n");
 		return NULL;
 	}
 
 	if ((fullpath = realpath(path, NULL)) == NULL) {
-		fprintf(stderr, "\x1b[38;5;9mread_bin: Could not find '%s'!\x1b[0m\n", path);
+		fprintf(stderr, "\x1b[38;5;11mread_bin: Could not find '%s%s'!\x1b[0m\n", curdir, path);
 		return NULL;
 	}
 
 	if ((file = fopen(fullpath, "rb")) == NULL) {
-		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to open '%s'!\x1b[0m\n", fullpath);
+		fprintf(stderr, "\x1b[38;5;11mread_bin: Failed to open '%s'!\x1b[0m\n", fullpath);
 		return NULL;
 	}
 
 	if (fseek(file, 0, SEEK_END) != 0) {
-		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to seek in '%s'!\x1b[0m\n", fullpath);
+		fprintf(stderr, "\x1b[38;5;11mread_bin: Failed to seek in '%s'!\x1b[0m\n", fullpath);
 		return NULL;
 	}
 
 	if ((filelen = ftell(file)) < 0) {
-		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to get size of '%s'!\x1b[0m\n", fullpath);
+		fprintf(stderr, "\x1b[38;5;11mread_bin: Failed to get size of '%s'!\x1b[0m\n", fullpath);
 		return NULL;
 	}
 
@@ -625,17 +635,17 @@ void *read_bin(const char *path, long *len) {
 	rewind(file);
 
 	if ((ptr = malloc(filelen)) == NULL) {
-		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to allocate %ld bytes for reading file '%s'!\x1b[0m\n", filelen, fullpath);
+		fprintf(stderr, "\x1b[38;5;11mread_bin: Failed to allocate %ld bytes for reading file '%s'!\x1b[0m\n", filelen, fullpath);
 		return NULL;
 	}
 
 	if (fread(ptr, 1, filelen, file) < filelen) {
-		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to read file '%s'!\x1b[0m\n", fullpath);
+		fprintf(stderr, "\x1b[38;5;11mread_bin: Failed to read file '%s'!\x1b[0m\n", fullpath);
 		return NULL;
 	}
 
 	if (fclose(file) != 0) {
-		fprintf(stderr, "\x1b[38;5;9mread_bin: Failed to close file '%s'!\x1b[0m\n", fullpath);
+		fprintf(stderr, "\x1b[38;5;11mread_bin: Failed to close file '%s'!\x1b[0m\n", fullpath);
 		return NULL;
 	}
 
@@ -690,17 +700,29 @@ int main(int argc, char **argv) {
 	console_set_cursor_pos(1, 0);
 
 	// Load the payload files from SD
-	if (!fatInitDefault()) {
-		fprintf(stderr, "\x1b[38;5;9mFailed to initialize FAT device!\x1b[0m\n");
-		state = APP_STATE_INIT_FAILED;
+	if (fatInitDefault()) {
+		if ((stage0_payload = read_bin("stage0.bin", &stage0_length)) == NULL) {
+			fprintf(stderr, "\x1b[38;5;11mUsing built-in stage0 as fallback.\x1b[0m\n");
+			state = APP_STATE_INIT_WARNING;
+		}
+		
+		if ((stage1_payload = read_bin("stage1.bin", &stage1_length)) == NULL) {
+			fprintf(stderr, "\x1b[38;5;11mUsing built-in stage1 as fallback.\x1b[0m\n");
+			state = APP_STATE_INIT_WARNING;
+		}
+	} else {
+		fprintf(stderr, "\x1b[38;5;11mWARNING: failed to initialize FAT device!\nUsing built-in payloads as fallback.\x1b[0m\n");
+		state = APP_STATE_INIT_WARNING;
 	}
 
-	if ((state == APP_STATE_CHOOSE) && ((stage0_payload = read_bin("stage0.bin", &stage0_length)) == NULL)) {
-		state = APP_STATE_INIT_FAILED;
-	}
+	if (stage0_payload == NULL) {
+		stage0_payload = stage0_bin;
+		stage0_length = sizeof(stage0_bin);
+	}	
 
-	if ((state == APP_STATE_CHOOSE) && ((stage1_payload = read_bin("stage1.bin", &stage1_length)) == NULL)) {
-		state = APP_STATE_INIT_FAILED;
+	if (stage1_payload == NULL) {
+		stage1_payload = stage1_bin;
+		stage1_length = sizeof(stage1_bin);
 	}
 
 	while (!quitState) {
@@ -826,6 +848,20 @@ int main(int argc, char **argv) {
 					quitState = 1;
 				}
 				break;
+			case APP_STATE_INIT_WARNING:
+				printf("Press \x1b[38;5;10mA\x1b[0m to continue, or press \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
+				state++;
+				break;
+			case APP_STATE_WAIT_CONTINUE:
+				if ((wpad_pressed & WPAD_BUTTON_A) || (pad_pressed & PAD_BUTTON_A)) {
+					console_clear_screen(2);
+					state = APP_STATE_CHOOSE;
+				} else if ((wpad_pressed & WPAD_BUTTON_HOME) || (pad_pressed & PAD_BUTTON_START)) {
+					console_set_cursor_pos(6, 0);
+					console_clear_screen(0);
+					quitState = 1;
+				}
+				break;
 			case APP_STATE_INIT_FAILED:
 				printf("An error occurred while initializing \x1b[38;5;39mBlueMii\x1b[0m.\nPress \x1b[38;5;51mHOME\x1b[0m/\x1b[38;5;7mSTART\x1b[0m to quit.\n");
 				state++;
@@ -842,17 +878,26 @@ int main(int argc, char **argv) {
 		VIDEO_WaitVSync();
 	}
 
-	if (state == APP_STATE_EXPLOIT_RUNNING)
-		BT_Shutdown();
-	else
-		WPAD_Shutdown();
+	// Free payloads if not using fallback
+	if (stage0_payload != stage0_bin)
+		free(stage0_payload);
+	
+	if (stage1_payload != stage1_bin)
+		free(stage1_payload);
 
+	// Poweroff if requested by user with power button
 	if (quitState == 2) {
 		SYS_ResetSystem(SYS_POWEROFF,0,0);
 	}
 
 	printf("On this day, you truly \x1b[38;5;39mBlueMii\x1b[0m.\n");
 	sleep(2);
+
+	// Make sure to shutdown correct Bluetooth driver
+	if (state == APP_STATE_EXPLOIT_RUNNING)
+		BT_Shutdown();
+	else
+		WPAD_Shutdown();
 
 	return 0;
 }
