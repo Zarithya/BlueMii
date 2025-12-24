@@ -2,13 +2,13 @@
 
 ![Tobias](https://media1.tenor.com/m/_Donca-oV40AAAAC/tobias-funke-david-cross.gif)
 
-BlueMii is a port of [Fullmetal5's BlueBomb exploit](https://github.com/Fullmetal5/bluebomb) for Broadcom's Bluetooth stack used in the Nintendo Wii *to* the Nintendo Wii. This means you can use the Bluetooth capabilities of one Wii / Wii U to install homebrew on another Wii. This probably isn't useful to most people, but it was fun to work on.
+BlueMii is a port of [Fullmetal5's BlueBomb exploit](https://github.com/Fullmetal5/bluebomb) for Broadcom's Bluetooth stack used in the Nintendo Wii *to* the Nintendo Wii. This means you can use the Bluetooth capabilities of one Wii / Wii mini / Wii U (vWii) / Dolphin to install homebrew on another Wii/Wii mini. This probably isn't useful to most people, but it was fun to work on.
 
 The stage1 payload is taken from [Aep's fork](https://github.com/Aeplet/bb-stage1-sd), which adds SD card support.
 
 ## How to Use
 
-You will need either an already-hacked Wii / Wii U (vWii) console or a copy of Dolphin **with working Bluetooth passthrough**.
+You will need either an already-hacked Wii / Wii mini / Wii U (vWii) console **or** a copy of Dolphin **with working Bluetooth passthrough**.
 
 1. Copy the `apps` folder from the BlueMii `.zip` to the root of your SD card or USB drive and insert it into your *already-hacked* source console.
 2. Copy a `boot.elf` of your choosing (usually the [Hackmii Installer](https://bootmii.org/download/)) to the root of another SD card or USB drive and insert it into your *target* console.
@@ -29,4 +29,5 @@ A: Make sure the system menu version and region are correct for your *target* co
 
 **Q: BlueMii is stuck on "Uploading payload..."/My target console is frozen!**    
 A: Press the SYNC button on your source console to cancel the exploit, then reboot your target console and try again.
+
 
