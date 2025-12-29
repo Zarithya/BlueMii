@@ -2,7 +2,7 @@
 <app version="1">
   <name>BlueMii</name>
   <coder>Zarithya</coder>
-  <version>1.0</version>
+  <version>1.1</version>
   <release_date>20251122</release_date>
   <short_description>BlueBomb a Wii from your Wii!</short_description>
   <long_description>BlueMii is a port of Fullmetal5's BlueBomb exploit for Broadcom's Bluetooth stack used in the Nintendo Wii, *to* the Nintendo Wii. This means you can use the Bluetooth capabilities of one Wii to install homebrew on another Wii.
@@ -12,3 +12,4 @@ This probably isn't useful to most people, but it was fun to work on.
 The stage1 payload is taken from Aep's fork, which adds SD card support.</long_description>
 
 </app>
+
